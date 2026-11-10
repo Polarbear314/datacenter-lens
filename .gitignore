@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# OS / editor
+.DS_Store
+.fuse_hidden*
+.vscode/
+.idea/
+
+# Local scratch databases (dclens_dev.db is the intentional sample snapshot)
+datacenter_lens.db
+*.db-journal
+
+# Satellite pipeline outputs
+satellite-exposure/output/
+*.tif
