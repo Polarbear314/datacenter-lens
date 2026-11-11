@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Center Resource Exposure Tool</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 12px; }
+
+    .logo-icon {
+      font-size: 22px;
+      background: linear-gradient(135deg, #1f6feb, #388bfd);
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .logo-text { font-size: 16px; font-weight: 700; color: #e6edf3; }
+    .logo-sub { font-size: 11px; color: #8b949e; margin-top: 1px; }
+
+    .header-badge {
+      background: #1c2e45;
+      border: 1px solid #1f6feb;
+      color: #58a6ff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: 360px;
+      background: #161b22;
+      border-right: 1px solid #30363d;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .sidebar-scroll {
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .sidebar-scroll::-webkit-scrollbar { width: 4px; }
+    .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+    .sidebar-scroll::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+    .section {
+      padding: 14px 16px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .section-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #8b949e;
+      margin-bottom: 10px;
+    }
+
+    /* ── FACILITY CARDS ── */
+    .facility-card {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 11px 13px;
+      margin-bottom: 7px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .facility-card:hover { border-color: #58a6ff; }
+    .facility-card.active { border-color: #388bfd; background: #1c2e45; }
+
+    .facility-logo {
+      width: 32px; height: 32px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px;
+      flex-shrink: 0;
+    }
+
+    .facility-info { flex: 1; min-width: 0; }
+    .facility-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .facility-location { font-size: 11px; color: #8b949e; margin-top: 1px; }
+
+    .risk-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .risk-high { background: #3d1a1a; color: #f85149; }
+    .risk-med  { background: #3d2a1a; color: #e3b341; }
+    .risk-low  { background: #1a3d1a; color: #3fb950; }
+
+    /* ── METRICS ── */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 7px;
+    }
+
+    .metric {
+      background: #21262d;
+      border-radius: 8px;
+      padding: 10px;
+      border: 1px solid #30363d;
+    }
+
+    .metric-icon { font-size: 14px; margin-bottom: 4px; }
+    .metric-label { font-size: 10px; color: #8b949e; margin-bottom: 2px; }
+    .metric-value { font-size: 17px; font-weight: 700; line-height: 1; }
+    .metric-unit { font-size: 10px; color: #8b949e; margin-top: 2px; }
+
+    .m-power .metric-value { color: #f85149; }
+    .m-water .metric-value { color: #58a6ff; }
+    .m-pue   .metric-value { color: #e3b341; }
+    .m-renew .metric-value { color: #3fb950; }
+    .m-servers .metric-value { color: #bc8cff; }
+    .m-footprint .metric-value { color: #e6edf3; }
+
+    /* ── BARS ── */
+    .bar-row { margin-bottom: 10px; }
+    .bar-header { display: flex; justify-content: space-between; font-size: 11px; color: #8b949e; margin-bottom: 4px; }
+    .bar-val { color: #e6edf3; font-weight: 600; }
+    .bar-track { height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width 0.7s cubic-bezier(0.4,0,0.2,1); }
+
+    /* ── TAGS ── */
+    .tag {
+      display: inline-block;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 11px;
+      color: #e6edf3;
+      margin: 2px 2px 2px 0;
+    }
+
+    /* ── NOTES ── */
+    .facility-notes {
+      font-size: 12px;
+      color: #8b949e;
+      line-height: 1.65;
+      margin-bottom: 10px;
+    }
+
+    .satellite-signals {
+      background: #1c2e45;
+      border: 1px solid #1f6feb;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-top: 8px;
+    }
+
+    .satellite-signals-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: #58a6ff;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .signal-item {
+      font-size: 11px;
+      color: #79c0ff;
+      padding: 2px 0;
+      display: flex;
+      gap: 6px;
+    }
+
+    /* ── LEGEND ── */
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #8b949e;
+      margin-bottom: 7px;
+    }
+    .legend-dot {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.25);
+      flex-shrink: 0;
+    }
+
+    /* ── METHODOLOGY ── */
+    .methodology {
+      font-size: 11px;
+      color: #8b949e;
+      line-height: 1.65;
+      background: #21262d;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .methodology strong { color: #e6edf3; }
+
+    /* ── MAP ── */
+    #map { flex: 1; }
+
+    /* ── POPUP OVERRIDES ── */
+    .leaflet-popup-content-wrapper {
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      color: #e6edf3;
+    }
+    .leaflet-popup-tip { background: #1c2128; }
+    .leaflet-popup-content { margin: 14px; }
+
+    .popup-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .popup-type {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .popup-desc { font-size: 12px; color: #8b949e; line-height: 1.55; }
+    .popup-note { font-size: 10px; color: #388bfd; margin-top: 8px; font-style: italic; }
+
+    /* overview label on initial view */
+    .overview-hint {
+      position: absolute;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(22,27,34,0.92);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 13px;
+      color: #8b949e;
+      pointer-events: none;
+      z-index: 500;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo-icon">🛰</div>
+    <div>
+      <div class="logo-text">DataCenter Exposure Tool</div>
+      <div class="logo-sub">Satellite-based infrastructure &amp; resource consumption analysis</div>
+    </div>
+  </div>
+  <div class="header-badge">Research Preview</div>
+</header>
+
+<div class="main">
+
+  <!-- ════ SIDEBAR ════ -->
+  <div class="sidebar">
+    <div class="sidebar-scroll">
+
+      <!-- Facility selector -->
+      <div class="section">
+        <div class="section-title">Select Data Center</div>
+        <div id="facility-list"></div>
+      </div>
+
+      <!-- Resource metrics -->
+      <div class="section" id="metrics-section" style="display:none">
+        <div class="section-title">Estimated Resource Consumption</div>
+        <div class="metric-grid" id="metrics-grid"></div>
+      </div>
+
+      <!-- Bars -->
+      <div class="section" id="bars-section" style="display:none">
+        <div class="section-title">Intensity vs. Dataset Maximum</div>
+        <div id="infra-bars"></div>
+      </div>
+
+      <!-- Facility profile -->
+      <div class="section" id="profile-section" style="display:none">
+        <div class="section-title">Facility Profile</div>
+        <div id="facility-profile"></div>
+      </div>
+
+      <!-- Legend -->
+      <div class="section">
+        <div class="section-title">Building Outline Legend</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Server / data hall building</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#e3b341"></div>Cooling / open-air system</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div>Electrical substation / power</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>Expansion campus</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#388bfd; border: 2px dashed #388bfd; border-radius:0"></div>Campus boundary (OSM)</div>
+        <div style="font-size:10px;color:#8b949e;margin-top:6px;">Click any outline to see details. Solid outlines = OSM-verified. Dashed = campus boundary. ⚠ = approximate.</div>
+      </div>
+
+      <!-- Methodology -->
+      <div class="section">
+        <div class="section-title">Estimation Methodology</div>
+        <div class="methodology">
+          <strong>Building footprint</strong> measured from high-res satellite imagery (Maxar/Esri). <strong>Power draw</strong> estimated via footprint × server density assumptions × PUE. <strong>Water usage</strong> estimated via cooling tower count × standard evaporation rates × load factor. <strong>Thermal signatures</strong> cross-referenced from Landsat-9 TIRS (Band 10, 100m resolution).<br><br>
+          Estimates carry <strong>±25–35% uncertainty</strong>. Companies do not publicly disclose site-level consumption; satellite inference is currently the primary independent verification method.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ════ MAP ════ -->
+  <div id="map"></div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+
+/* ──────────────────────────────────────────
+   FACILITY DATA  —  building polygons sourced
+   from OpenStreetMap (© ODbL contributors).
+   Resource estimates from public records,
+   satellite analysis, and academic literature.
+   Approximate polygons marked with ⚠ in desc.
+────────────────────────────────────────── */
+const facilities = [
+  {
+    id: 'google-dalles',
+    name: 'Google — The Dalles',
+    company: 'Google',
+    emoji: '🟦',
+    location: 'The Dalles, Oregon',
+    coords: [45.6316, -121.2003],
+    zoom: 16,
+    risk: 'high',
+    riskLabel: '⚠ High Water Use',
+    footprint_sqft: 1100000,
+    power_mw: 200,
+    water_mgal_yr: 1400,
+    pue: 1.10,
+    renewable_pct: 90,
+    est_servers: 180000,
+    since: 2006,
+    cooling: 'Evaporative (Columbia River)',
+    energy_source: 'Hydro + Wind (BPA)',
+    notes: "Google's oldest large-scale campus at 4200 Columbia Rd, The Dalles, OR. Draws water from Columbia River tributaries for evaporative cooling. The city of The Dalles disclosed ~1.4 billion gallons/year of usage after public records requests — more than the entire city uses. Powered largely by Bonneville Dam hydroelectricity.",
+    signals: [
+      'Visible cooling tower arrays — white circular structures',
+      'Large flat-roofed rectangular server buildings (white membrane)',
+      'High-voltage substation visible to the west of main buildings',
+      'Positioned adjacent to Columbia River (water source)',
+      'Thermal anomaly on Landsat-9 TIRS band 10',
+    ],
+    buildings: [
+      { label: 'Data Center Campus Boundary', polygon: [[45.63044,-121.20185],[45.63134,-121.20183],[45.63132,-121.20333],[45.63053,-121.20333],[45.63053,-121.20403],[45.63168,-121.20405],[45.63263,-121.20459],[45.63265,-121.20453],[45.63266,-121.20446],[45.63272,-121.20449],[45.63295,-121.20417],[45.63302,-121.2041],[45.63313,-121.20396],[45.63333,-121.20366],[45.63341,-121.20351],[45.63357,-121.20317],[45.63375,-121.20278],[45.63388,-121.20241],[45.63392,-121.20218],[45.63392,-121.20196],[45.6339,-121.20173],[45.63383,-121.20138],[45.63374,-121.20109],[45.63364,-121.20082],[45.63355,-121.20057],[45.63351,-121.2004],[45.63344,-121.19998],[45.63339,-121.19971],[45.63334,-121.19955],[45.63327,-121.19945],[45.6332,-121.19938],[45.63308,-121.19927],[45.63291,-121.19918],[45.63156,-121.19851],[45.63137,-121.19838],[45.63115,-121.19832],[45.63013,-121.19782],[45.63011,-121.19825],[45.63023,-121.19827],[45.63032,-121.19833],[45.6304,-121.19847],[45.63044,-121.19861],[45.63044,-121.20185]], color: '#388bfd', fillOpacity: 0.08, weight: 2, dash: '8 5', type: 'Campus', desc: 'Verified OSM campus boundary for Google The Dalles (4200 Columbia Rd). ~1.1M sq ft total footprint. Occupies a former aluminum smelter along the Columbia River.' },
+      { label: 'Server Hall A', polygon: [[45.63308,-121.20271],[45.6318,-121.2027],[45.6318,-121.20189],[45.63308,-121.2019],[45.63308,-121.20271]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Server hall A — confirmed building footprint from OSM. Estimated ~300,000 sq ft. White membrane roof with rooftop HVAC visible in satellite imagery.' },
+      { label: 'Server Hall B', polygon: [[45.63218,-121.19982],[45.6309,-121.19982],[45.6309,-121.19901],[45.63218,-121.19901],[45.63218,-121.19982]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Server hall B — confirmed building footprint from OSM. Estimated ~280,000 sq ft. Expansion building, added during 2012–2015 growth period.' },
+      { label: 'Data Hall Block C', polygon: [[45.63296,-121.20149],[45.63296,-121.20068],[45.63283,-121.20068],[45.63283,-121.20058],[45.63254,-121.20058],[45.63254,-121.20032],[45.63127,-121.20033],[45.63127,-121.20078],[45.63101,-121.20078],[45.63101,-121.20149],[45.63296,-121.20149]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Data hall block C — confirmed OSM building. ~250,000 sq ft. Largest building complex on main campus.' },
+      { label: 'Cooling Tower Area', polygon: [[45.6343,-121.2008],[45.6343,-121.1995],[45.6335,-121.1995],[45.6335,-121.2008],[45.6343,-121.2008]], color: '#e3b341', fillOpacity: 0.45, weight: 2, dash: null, type: 'Cooling', desc: '⚠ Approximate position. Evaporative cooling towers drawing from Columbia River. 8–12 cells estimated from satellite. Primary source of the facility\'s ~1.4B gal/yr water footprint.' },
+      { label: 'Electrical Substation', polygon: [[45.6326,-121.2062],[45.6326,-121.2050],[45.6312,-121.2050],[45.6312,-121.2062],[45.6326,-121.2062]], color: '#f85149', fillOpacity: 0.45, weight: 2, dash: null, type: 'Power', desc: '⚠ Approximate position. High-voltage substation fed from Bonneville Power Administration grid. Estimated 200+ MW capacity. Visible transformer banks and incoming 230kV lines.' },
+      { label: 'Taylor Lake Campus', polygon: [[45.63758,-121.20408],[45.63697,-121.20378],[45.63702,-121.20353],[45.63673,-121.20339],[45.63718,-121.20136],[45.63723,-121.20135],[45.63727,-121.20132],[45.6373,-121.20129],[45.63732,-121.20125],[45.63733,-121.20121],[45.63774,-121.19948],[45.639,-121.20053],[45.63932,-121.20092],[45.63945,-121.20105],[45.63991,-121.20145],[45.64012,-121.20158],[45.64025,-121.20174],[45.6402,-121.20202],[45.6403,-121.20221],[45.6403,-121.20292],[45.63952,-121.20462],[45.63883,-121.20465],[45.63758,-121.20408]], color: '#58a6ff', fillOpacity: 0.18, weight: 2, dash: '6 4', type: 'Expansion Campus', desc: 'Google Taylor Lake Data Center — confirmed OSM boundary. Separate campus ~700m north of main facility. Newest expansion on the Columbia River waterfront.' },
+    ]
+  },
+  {
+    id: 'aws-ashburn',
+    name: 'AWS — Ashburn (IAD)',
+    company: 'Amazon Web Services',
+    emoji: '🟧',
+    location: 'Ashburn, Virginia',
+    coords: [39.028, -77.452],
+    zoom: 15,
+    risk: 'med',
+    riskLabel: '⚡ Extreme Energy Density',
+    footprint_sqft: 920000,
+    power_mw: 300,
+    water_mgal_yr: 180,
+    pue: 1.20,
+    renewable_pct: 55,
+    est_servers: 220000,
+    since: 2005,
+    cooling: 'Hybrid Air + Water',
+    energy_source: 'PJM Grid + Wind PPAs',
+    notes: "Part of \"Data Center Alley\" — Loudoun County, VA hosts an estimated 70% of global internet traffic and 300+ data centers. This AWS IAD cluster (Smith Switch Rd / Interconnection Plaza, Ashburn) sits within the highest data center density on Earth. Primarily powered by PJM grid with renewable energy PPAs. The scale of regional power demand (~5 GW total) strains transmission infrastructure.",
+    signals: [
+      'Dense cluster of identical large-footprint rectangular buildings',
+      'Multiple substations visible across campus',
+      'Limited cooling tower presence — primarily air-cooled',
+      'High-voltage transmission lines converging from multiple directions',
+      'Minimal vegetation surrounding buildings (heat island effect)',
+    ],
+    buildings: [
+      { label: 'AWS Datacenter Complex (Campus)', polygon: [[39.02756,-77.45437],[39.02743,-77.45437],[39.02742,-77.45453],[39.0273,-77.45453],[39.0273,-77.45445],[39.02726,-77.45445],[39.02726,-77.45437],[39.02667,-77.45435],[39.02645,-77.454],[39.02646,-77.45281],[39.02646,-77.45268],[39.02612,-77.45245],[39.02613,-77.4517],[39.02606,-77.45149],[39.02599,-77.45143],[39.02524,-77.45141],[39.02509,-77.45122],[39.02504,-77.45106],[39.02505,-77.4505],[39.02507,-77.4505],[39.02506,-77.4503],[39.02501,-77.45028],[39.02493,-77.45026],[39.02493,-77.45021],[39.02493,-77.45014],[39.02509,-77.45015],[39.02509,-77.45012],[39.02509,-77.45005],[39.02506,-77.44996],[39.02506,-77.44926],[39.02513,-77.44873],[39.02553,-77.44879],[39.02584,-77.44883],[39.02607,-77.44885],[39.02634,-77.44885],[39.02677,-77.44885],[39.02721,-77.4488],[39.02748,-77.44877],[39.02768,-77.44898],[39.02772,-77.44913],[39.02772,-77.44922],[39.0277,-77.44934],[39.0277,-77.44952],[39.02773,-77.44999],[39.02769,-77.45008],[39.02763,-77.45026],[39.0276,-77.45282],[39.02759,-77.45312],[39.02756,-77.45351],[39.02766,-77.45352],[39.02762,-77.45388],[39.02756,-77.45437]], color: '#388bfd', fillOpacity: 0.08, weight: 2, dash: '8 5', type: 'Campus', desc: 'Verified OSM campus boundary: Amazon Web Services Datacenter Complex, Interconnection Plaza, Ashburn VA. Contains multiple IAD-series data center buildings.' },
+      { label: 'Amazon IAD78', polygon: [[39.02744,-77.44987],[39.02745,-77.44921],[39.0253,-77.44917],[39.02529,-77.44983],[39.02744,-77.44987]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Amazon IAD78 — confirmed OSM building at 44854 Interconnection Plaza. ~215,000 sq ft. One of the oldest AWS buildings in the Ashburn cluster.' },
+      { label: 'Amazon IAD79', polygon: [[39.02743,-77.45122],[39.02743,-77.45055],[39.02529,-77.45052],[39.02528,-77.45119],[39.02743,-77.45122]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Amazon IAD79 — confirmed OSM building at 44858 Interconnection Plaza. ~215,000 sq ft. Adjacent to IAD78, part of the core Interconnection Plaza cluster.' },
+      { label: 'Amazon IAD80', polygon: [[39.02739,-77.45146],[39.02736,-77.45421],[39.02683,-77.4542],[39.02686,-77.45145],[39.02739,-77.45146]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Amazon IAD80 — confirmed OSM building. ~200,000 sq ft. Part of the Interconnection Plaza complex.' },
+      { label: 'Amazon Web Services (Smith Complex)', polygon: [[39.02886,-77.46144],[39.02877,-77.46139],[39.02872,-77.46131],[39.02868,-77.46123],[39.02866,-77.46117],[39.02865,-77.46109],[39.02864,-77.46095],[39.02866,-77.46075],[39.02872,-77.46052],[39.02882,-77.46016],[39.02829,-77.45928],[39.02725,-77.45849],[39.02716,-77.45834],[39.02712,-77.45823],[39.0271,-77.45815],[39.0271,-77.45806],[39.0271,-77.458],[39.02714,-77.45797],[39.02717,-77.45791],[39.0272,-77.45742],[39.02724,-77.45743],[39.02733,-77.45743],[39.02742,-77.45733],[39.02751,-77.45718],[39.02763,-77.45694],[39.02757,-77.45688],[39.02748,-77.45681],[39.02782,-77.45609],[39.02785,-77.45606],[39.02789,-77.45604],[39.02797,-77.45604],[39.02806,-77.45606],[39.02818,-77.45611],[39.0283,-77.45616],[39.02837,-77.45622],[39.02843,-77.45627],[39.02881,-77.45674],[39.02898,-77.45693],[39.02916,-77.45711],[39.0293,-77.45722],[39.02944,-77.45734],[39.02957,-77.45744],[39.0297,-77.45753],[39.02984,-77.45762],[39.02997,-77.45769],[39.03051,-77.45794],[39.03025,-77.45867],[39.0302,-77.45882],[39.03017,-77.45901],[39.03015,-77.45907],[39.03012,-77.45926],[39.03021,-77.45949],[39.03023,-77.45985],[39.03015,-77.46019],[39.03008,-77.46044],[39.03005,-77.46064],[39.03002,-77.46067],[39.03,-77.46068],[39.02992,-77.46067],[39.02986,-77.46066],[39.02982,-77.46068],[39.02977,-77.46084],[39.02972,-77.46099],[39.02968,-77.46112],[39.02966,-77.46121],[39.02964,-77.46127],[39.02963,-77.46138],[39.02962,-77.46143],[39.02958,-77.46153],[39.02953,-77.46158],[39.02949,-77.46161],[39.02943,-77.46164],[39.02936,-77.46164],[39.02886,-77.46144]], color: '#3fb950', fillOpacity: 0.3, weight: 2, dash: null, type: 'Server', desc: 'Amazon Web Services Smith Switch Road complex — confirmed OSM boundary. Houses IAD50, IAD60, IAD71. ~600,000 sq ft combined. Part of us-east-1 AWS region.' },
+      { label: 'Substation / Power Infrastructure', polygon: [[39.0295,-77.4440],[39.0295,-77.4430],[39.0280,-77.4430],[39.0280,-77.4440],[39.0295,-77.4440]], color: '#f85149', fillOpacity: 0.45, weight: 2, dash: null, type: 'Power', desc: '⚠ Approximate position. Electrical substation supplying the IAD campus cluster. Connected to Dominion Energy 230kV transmission. This region draws ~2 GW of grid power total across all data centers.' },
+    ]
+  },
+  {
+    id: 'microsoft-quincy',
+    name: 'Microsoft — Quincy',
+    company: 'Microsoft',
+    emoji: '🟩',
+    location: 'Quincy, Washington',
+    coords: [47.237, -119.873],
+    zoom: 14,
+    risk: 'med',
+    riskLabel: '💧 Water Stress Region',
+    footprint_sqft: 2100000,
+    power_mw: 180,
+    water_mgal_yr: 800,
+    pue: 1.12,
+    renewable_pct: 100,
+    est_servers: 150000,
+    since: 2007,
+    cooling: 'Evaporative (Columbia Basin)',
+    energy_source: 'Columbia Basin Hydro',
+    notes: "Microsoft's flagship campus at 1515 Port Industrial Way, Quincy, WA — one of the first to achieve 100% renewable energy. Powered by Grant County PUD hydroelectric. However, water drawn from the Columbia Basin Irrigation District for evaporative cooling has become controversial — the region faces increasing drought pressure and agricultural water competition. ~800M gallons/year estimated from cooling tower count.",
+    signals: [
+      'Cooling tower clusters visible inside eastern campus polygon',
+      'Large multi-building campus surrounded by arid agricultural land',
+      'Western server halls at -119.88 lon (separate from main campus)',
+      'Stark contrast between white buildings and dry surrounding basin',
+      'Shadow geometry confirms 2–3 story buildings',
+    ],
+    buildings: [
+      { label: 'Microsoft Data Center Campus (East)', polygon: [[47.24127,-119.85796],[47.23917,-119.85796],[47.23917,-119.85822],[47.23754,-119.85823],[47.23695,-119.86669],[47.23873,-119.86713],[47.23873,-119.86674],[47.24112,-119.86672],[47.2411,-119.86399],[47.24127,-119.85796]], color: '#388bfd', fillOpacity: 0.08, weight: 2, dash: '8 5', type: 'Campus', desc: 'Verified OSM boundary: Microsoft MWH campus (east), 1515 Port Industrial Way, Quincy WA. ~1M sq ft. Primary Azure West US 2 region campus.' },
+      { label: 'Server Hall MWH-A', polygon: [[47.23976,-119.88142],[47.2392,-119.88142],[47.23919,-119.88289],[47.23936,-119.88289],[47.23936,-119.88319],[47.23921,-119.88319],[47.23921,-119.8846],[47.23976,-119.8846],[47.23976,-119.88321],[47.23961,-119.88321],[47.23961,-119.88281],[47.23976,-119.88281],[47.23976,-119.88142]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Microsoft server hall MWH-A — confirmed OSM building, west campus. ~150,000 sq ft. Part of the MWH Azure availability zone.' },
+      { label: 'Server Hall MWH-B', polygon: [[47.23885,-119.8828],[47.23865,-119.8828],[47.23865,-119.88316],[47.23884,-119.88317],[47.23884,-119.8847],[47.23831,-119.88471],[47.2383,-119.88315],[47.23848,-119.88315],[47.23848,-119.88284],[47.23831,-119.88284],[47.23831,-119.88145],[47.23885,-119.88146],[47.23885,-119.8828]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Microsoft server hall MWH-B — confirmed OSM building. ~150,000 sq ft. Adjacent to MWH-A.' },
+      { label: 'Server Hall MWH-C', polygon: [[47.23976,-119.88902],[47.23924,-119.88903],[47.23923,-119.88762],[47.23934,-119.88762],[47.23934,-119.88722],[47.23922,-119.88722],[47.23922,-119.8858],[47.23974,-119.88579],[47.23975,-119.88722],[47.2396,-119.88722],[47.23961,-119.88762],[47.23975,-119.88762],[47.23976,-119.88902]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Microsoft server hall MWH-C — confirmed OSM building. ~150,000 sq ft.' },
+      { label: 'Server Hall MWH-D', polygon: [[47.2374,-119.88877],[47.23792,-119.88876],[47.23791,-119.8866],[47.23782,-119.8866],[47.23782,-119.88629],[47.23744,-119.8863],[47.23744,-119.8866],[47.2374,-119.8866],[47.2374,-119.88877]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Microsoft server hall MWH-D — confirmed OSM building.' },
+      { label: 'Server Hall MWH-E', polygon: [[47.23738,-119.88448],[47.23782,-119.88448],[47.23782,-119.88417],[47.2379,-119.88417],[47.23788,-119.88196],[47.23737,-119.88196],[47.23738,-119.88448]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Microsoft server hall MWH-E — confirmed OSM building.' },
+      { label: 'Server Hall MWH-F', polygon: [[47.23655,-119.88508],[47.2369,-119.88508],[47.2369,-119.8848],[47.23694,-119.8848],[47.23694,-119.88477],[47.23698,-119.88477],[47.23697,-119.88159],[47.23646,-119.88159],[47.23647,-119.88476],[47.23653,-119.88476],[47.23653,-119.88487],[47.23655,-119.88487],[47.23655,-119.88508]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Microsoft server hall MWH-F — confirmed OSM building.' },
+      { label: 'Server Hall MWH-G', polygon: [[47.23649,-119.8892],[47.23701,-119.8892],[47.23699,-119.88593],[47.2369,-119.88593],[47.2369,-119.88566],[47.23655,-119.88566],[47.23656,-119.88594],[47.23647,-119.88594],[47.23649,-119.8892]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Microsoft server hall MWH-G — confirmed OSM building.' },
+      { label: 'Cooling Tower Array', polygon: [[47.2384,-119.8617],[47.2384,-119.8604],[47.2374,-119.8604],[47.2374,-119.8617],[47.2384,-119.8617]], color: '#e3b341', fillOpacity: 0.45, weight: 2, dash: null, type: 'Cooling', desc: '⚠ Approximate position within eastern campus. Evaporative cooling tower array using Columbia Basin Irrigation District water. Estimated 6–8 cells, ~800M gal/yr consumption.' },
+      { label: 'Electrical Substation', polygon: [[47.2398,-119.8585],[47.2398,-119.8572],[47.2385,-119.8572],[47.2385,-119.8585],[47.2398,-119.8585]], color: '#f85149', fillOpacity: 0.45, weight: 2, dash: null, type: 'Power', desc: '⚠ Approximate position. 230kV substation fed from Grant County PUD hydroelectric grid. ~180 MW capacity. Connected to Columbia Basin hydroelectric system.' },
+    ]
+  },
+  {
+    id: 'meta-prineville',
+    name: 'Meta — Prineville',
+    company: 'Meta',
+    emoji: '🟪',
+    location: 'Prineville, Oregon',
+    coords: [44.297, -120.887],
+    zoom: 15,
+    risk: 'low',
+    riskLabel: '✓ Efficient Design',
+    footprint_sqft: 4600000,
+    power_mw: 120,
+    water_mgal_yr: 480,
+    pue: 1.08,
+    renewable_pct: 85,
+    est_servers: 130000,
+    since: 2011,
+    cooling: 'Open-air Evaporative',
+    energy_source: 'Wind + Hydro (Oregon)',
+    notes: "Meta's largest campus at 735 SW Connect Way, Prineville, OR — now 10 buildings and 4.6M sq ft. Uses Prineville's naturally cool, dry climate for open-air free cooling. One of the most energy-efficient large-scale data centers globally (PUE 1.08). The distinctive vented roof design is clearly identifiable in satellite imagery. Consumes 982,177 MWh/yr electricity and 63.5M gallons of water/yr (Meta disclosed).",
+    signals: [
+      'Distinctive vented roof panels on older buildings — open-air cooling',
+      'Large rectangular server halls with white/grey roofs',
+      'High-desert rural setting (cool, dry air = free cooling advantage)',
+      'Multiple building generations visible (2011–2023 expansion)',
+      'Substation and water storage visible SW of main buildings',
+    ],
+    buildings: [
+      { label: 'Meta Building 1 (Original)', polygon: [[44.29768,-120.88755],[44.29753,-120.88825],[44.29729,-120.88816],[44.29726,-120.88834],[44.29692,-120.8882],[44.29695,-120.88802],[44.29544,-120.8874],[44.29539,-120.88762],[44.29438,-120.88722],[44.29442,-120.88699],[44.2942,-120.8869],[44.29435,-120.88621],[44.29457,-120.8863],[44.29768,-120.88755]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Meta Building 1 — confirmed OSM. First server hall, opened 2011. 334,000 sq ft. Uses open-air cooling. Built on Open Compute Project principles.' },
+      { label: 'Meta Building 2', polygon: [[44.29624,-120.88495],[44.2949,-120.88432],[44.29485,-120.88457],[44.29374,-120.88407],[44.29379,-120.88382],[44.29353,-120.88371],[44.29369,-120.883],[44.29382,-120.88306],[44.29629,-120.88417],[44.29642,-120.88423],[44.29624,-120.88495]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Meta Building 2 — confirmed OSM. Second server hall, 334,000 sq ft. Replica of Building 1 with identical cooling design.' },
+      { label: 'Meta Building 3 / Support', polygon: [[44.29635,-120.88318],[44.29628,-120.88351],[44.29559,-120.88319],[44.2956,-120.88315],[44.29566,-120.88286],[44.29635,-120.88318]], color: '#3fb950', fillOpacity: 0.35, weight: 2, dash: null, type: 'Server', desc: 'Meta Building 3 — confirmed OSM. 487,700 sq ft expansion announced 2015.' },
+      { label: 'Meta Building 4', polygon: [[44.29521,-120.88272],[44.29374,-120.88206],[44.29369,-120.88226],[44.29335,-120.88211],[44.2934,-120.88191],[44.29197,-120.88129],[44.29216,-120.88048],[44.29303,-120.88086],[44.29311,-120.88051],[44.29435,-120.88106],[44.29427,-120.88141],[44.2954,-120.88191],[44.29521,-120.88272]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Meta Building 4 — confirmed OSM. 450,000 sq ft. Added 2020 as part of $750M campus expansion.' },
+      { label: 'Meta Building 5 (Open-Air Cooling)', polygon: [[44.30081,-120.88017],[44.30081,-120.88101],[44.29741,-120.881],[44.29741,-120.88016],[44.2989,-120.88016],[44.2989,-120.88004],[44.29878,-120.88004],[44.29878,-120.87885],[44.29893,-120.87885],[44.29893,-120.87874],[44.29737,-120.87874],[44.29737,-120.87788],[44.3008,-120.87788],[44.3008,-120.87876],[44.29935,-120.87876],[44.29935,-120.88017],[44.30081,-120.88017]], color: '#e3b341', fillOpacity: 0.35, weight: 2, dash: null, type: 'Cooling', desc: 'Meta Building 5 — confirmed OSM. 450,000 sq ft. Distinctive open-air cooling vents visible in satellite imagery. Uses Prineville\'s dry air for free cooling, significantly reducing water use vs. conventional evaporative systems.' },
+      { label: 'Meta Building 6', polygon: [[44.30296,-120.89063],[44.30296,-120.89145],[44.29954,-120.89145],[44.29954,-120.89063],[44.30107,-120.89062],[44.30107,-120.89048],[44.30093,-120.89048],[44.30093,-120.88931],[44.30107,-120.88931],[44.30107,-120.88917],[44.29955,-120.88918],[44.29955,-120.88833],[44.30297,-120.88833],[44.30297,-120.88918],[44.30152,-120.88918],[44.30151,-120.89062],[44.30296,-120.89063]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Meta Building 6 — confirmed OSM. 450,000 sq ft. Part of 2018 $750M expansion announced with Building 7.' },
+      { label: 'Meta Building 7', polygon: [[44.3007,-120.89609],[44.30131,-120.89608],[44.30131,-120.89587],[44.30137,-120.89587],[44.30138,-120.89589],[44.30143,-120.89589],[44.30143,-120.89478],[44.30147,-120.89478],[44.30147,-120.89488],[44.30153,-120.89488],[44.30153,-120.89529],[44.30183,-120.89529],[44.30183,-120.8949],[44.30189,-120.8949],[44.30189,-120.89479],[44.30192,-120.89479],[44.30192,-120.89589],[44.30198,-120.89589],[44.30198,-120.89587],[44.30204,-120.89587],[44.30204,-120.89608],[44.30265,-120.89608],[44.30265,-120.89478],[44.30275,-120.89478],[44.30276,-120.89438],[44.30266,-120.89438],[44.30266,-120.89309],[44.30204,-120.89309],[44.30204,-120.89329],[44.30197,-120.89329],[44.30198,-120.89328],[44.30192,-120.89328],[44.30192,-120.89439],[44.30178,-120.89438],[44.30178,-120.89418],[44.30157,-120.89418],[44.30157,-120.89438],[44.30142,-120.89438],[44.30143,-120.89328],[44.30138,-120.89328],[44.30138,-120.8933],[44.30131,-120.8933],[44.30131,-120.89309],[44.30069,-120.89309],[44.30069,-120.89438],[44.30059,-120.89438],[44.30059,-120.89478],[44.30069,-120.89478],[44.3007,-120.89609]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Meta Building 7 — confirmed OSM. 450,000 sq ft. Newest server hall on the eastern side of campus.' },
+      { label: 'Meta Building 8', polygon: [[44.29972,-120.89607],[44.29972,-120.8948],[44.29983,-120.89479],[44.29983,-120.89437],[44.29972,-120.89437],[44.29971,-120.89309],[44.29909,-120.89309],[44.29909,-120.89328],[44.29897,-120.89328],[44.29897,-120.89447],[44.29892,-120.89447],[44.29892,-120.89423],[44.2986,-120.89423],[44.2986,-120.89524],[44.29891,-120.89524],[44.29891,-120.89478],[44.29899,-120.89478],[44.29899,-120.89586],[44.29911,-120.89586],[44.29911,-120.89607],[44.29972,-120.89607]], color: '#3fb950', fillOpacity: 0.4, weight: 2, dash: null, type: 'Server', desc: 'Meta Building 8 — confirmed OSM. 450,000 sq ft. Part of 2020–2023 expansion phase.' },
+      { label: 'Electrical Substation', polygon: [[44.2926,-120.8938],[44.2926,-120.8926],[44.2912,-120.8926],[44.2912,-120.8938],[44.2926,-120.8938]], color: '#f85149', fillOpacity: 0.45, weight: 2, dash: null, type: 'Power', desc: '⚠ Approximate position. Substation connected to Pacific Power transmission grid. Supplemental wind PPA from Eastern Oregon. ~120 MW capacity serving the Prineville campus.' },
+    ]
+  }
+];
+
+/* ──────────────────────────────────────────
+   MAP INIT
+────────────────────────────────────────── */
+const map = L.map('map', { zoomControl: true }).setView([40.5, -110], 4);
+
+L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { attribution: 'Imagery © Esri, Maxar, Earthstar Geographics', maxZoom: 19 }
+).addTo(map);
+
+L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  { opacity: 0.65, maxZoom: 19 }
+).addTo(map);
+
+/* ──────────────────────────────────────────
+   OVERVIEW PINS (shown on initial load)
+────────────────────────────────────────── */
+const overviewPins = [];
+
+facilities.forEach((f, i) => {
+  const pin = L.circleMarker(f.coords, {
+    radius: 10,
+    fillColor: '#388bfd',
+    color: '#fff',
+    weight: 2,
+    fillOpacity: 0.85
+  }).addTo(map);
+
+  pin.bindTooltip(f.name, { permanent: false, direction: 'top', className: '' });
+  pin.on('click', () => selectFacility(i));
+  overviewPins.push(pin);
+});
+
+/* ──────────────────────────────────────────
+   ACTIVE LAYER STATE
+────────────────────────────────────────── */
+let activeMarkers = [];
+let currentIndex = null;
+
+function clearActiveLayer() {
+  activeMarkers.forEach(m => map.removeLayer(m));
+  activeMarkers = [];
+}
+
+/* ──────────────────────────────────────────
+   LOAD FACILITY  —  polygon rendering
+────────────────────────────────────────── */
+function selectFacility(index) {
+  const f = facilities[index];
+  currentIndex = index;
+
+  document.querySelectorAll('.facility-card').forEach((c, i) => {
+    c.classList.toggle('active', i === index);
+  });
+
+  clearActiveLayer();
+
+  // Fit map to all building polygons, not just center point
+  const allLatLngs = f.buildings.flatMap(b => b.polygon);
+  if (allLatLngs.length > 0) {
+    const bounds = L.latLngBounds(allLatLngs);
+    map.flyToBounds(bounds.pad(0.15), { duration: 1.8, easeLinearity: 0.3 });
+  } else {
+    map.flyTo(f.coords, f.zoom, { duration: 1.8, easeLinearity: 0.3 });
+  }
+
+  // Render building polygons
+  f.buildings.forEach(bldg => {
+    const poly = L.polygon(bldg.polygon, {
+      color: bldg.color,
+      fillColor: bldg.color,
+      fillOpacity: bldg.fillOpacity,
+      weight: bldg.weight || 2,
+      dashArray: bldg.dash || null,
+      opacity: 0.9
+    }).addTo(map);
+
+    const isApprox = bldg.desc.startsWith('⚠');
+    poly.bindPopup(`
+      <div class="popup-title">${bldg.label}</div>
+      <div class="popup-type" style="color:${bldg.color}">${bldg.type}${isApprox ? ' — Approximate' : ' — OSM Verified'}</div>
+      <div class="popup-desc">${bldg.desc.replace(/^⚠\s*/,'')}</div>
+      <div class="popup-note">${isApprox ? '⚠ Approximate position based on known facility layout' : '📡 Polygon sourced from OpenStreetMap (ODbL)'}</div>
+    `, { maxWidth: 320, minWidth: 240 });
+
+    // Highlight on hover
+    poly.on('mouseover', () => poly.setStyle({ fillOpacity: Math.min(bldg.fillOpacity + 0.2, 0.8), weight: 3 }));
+    poly.on('mouseout',  () => poly.setStyle({ fillOpacity: bldg.fillOpacity, weight: bldg.weight || 2 }));
+
+    activeMarkers.push(poly);
+  });
+
+  renderMetrics(f);
+  renderBars(f);
+  renderProfile(f);
+
+  ['metrics-section','bars-section','profile-section'].forEach(id => {
+    document.getElementById(id).style.display = '';
+  });
+}
+
+/* ──────────────────────────────────────────
+   SIDEBAR RENDERERS
+────────────────────────────────────────── */
+function renderMetrics(f) {
+  document.getElementById('metrics-grid').innerHTML = `
+    <div class="metric m-power">
+      <div class="metric-icon">⚡</div>
+      <div class="metric-label">Power Draw</div>
+      <div class="metric-value">${f.power_mw}</div>
+      <div class="metric-unit">MW estimated</div>
+    </div>
+    <div class="metric m-water">
+      <div class="metric-icon">💧</div>
+      <div class="metric-label">Water Use</div>
+      <div class="metric-value">${f.water_mgal_yr >= 1000 ? (f.water_mgal_yr/1000).toFixed(1)+'B' : f.water_mgal_yr+'M'}</div>
+      <div class="metric-unit">gallons / year</div>
+    </div>
+    <div class="metric m-pue">
+      <div class="metric-icon">📊</div>
+      <div class="metric-label">PUE Ratio</div>
+      <div class="metric-value">${f.pue}</div>
+      <div class="metric-unit">efficiency index</div>
+    </div>
+    <div class="metric m-renew">
+      <div class="metric-icon">🌱</div>
+      <div class="metric-label">Renewables</div>
+      <div class="metric-value">${f.renewable_pct}%</div>
+      <div class="metric-unit">clean energy</div>
+    </div>
+    <div class="metric m-servers">
+      <div class="metric-icon">🖥</div>
+      <div class="metric-label">Est. Servers</div>
+      <div class="metric-value">${Math.round(f.est_servers/1000)}k</div>
+      <div class="metric-unit">estimated units</div>
+    </div>
+    <div class="metric m-footprint">
+      <div class="metric-icon">📐</div>
+      <div class="metric-label">Footprint</div>
+      <div class="metric-value">${(f.footprint_sqft/1e6).toFixed(1)}M</div>
+      <div class="metric-unit">sq ft (satellite)</div>
+    </div>
+  `;
+}
+
+function renderBars(f) {
+  const MAX_POWER = 300, MAX_WATER = 1400, MAX_PUE = 1.5;
+
+  const bars = [
+    { label: 'Power consumption', val: f.power_mw, max: MAX_POWER, unit: `${f.power_mw} MW`, color: '#f85149' },
+    { label: 'Water consumption', val: f.water_mgal_yr, max: MAX_WATER, unit: `${f.water_mgal_yr}M gal/yr`, color: '#58a6ff' },
+    { label: 'Energy efficiency (lower = better)', val: MAX_PUE - f.pue, max: MAX_PUE - 1.0, unit: `PUE ${f.pue}`, color: '#3fb950' },
+    { label: 'Renewable energy coverage', val: f.renewable_pct, max: 100, unit: `${f.renewable_pct}%`, color: '#3fb950' },
+  ];
+
+  document.getElementById('infra-bars').innerHTML = bars.map(b => `
+    <div class="bar-row">
+      <div class="bar-header">
+        <span>${b.label}</span>
+        <span class="bar-val">${b.unit}</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${Math.min(100,(b.val/b.max)*100).toFixed(1)}%; background:${b.color}"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderProfile(f) {
+  const tagRow = (label, val) => `
+    <div style="margin-bottom:8px">
+      <div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px">${label}</div>
+      <span class="tag">${val}</span>
+    </div>
+  `;
+
+  document.getElementById('facility-profile').innerHTML = `
+    <p class="facility-notes">${f.notes}</p>
+    ${tagRow('Cooling method', f.cooling)}
+    ${tagRow('Energy source', f.energy_source)}
+    ${tagRow('Operational since', f.since)}
+    <div class="satellite-signals">
+      <div class="satellite-signals-title">📡 Satellite signals detected</div>
+      ${f.signals.map(s => `<div class="signal-item"><span>›</span><span>${s}</span></div>`).join('')}
+    </div>
+  `;
+}
+
+/* ──────────────────────────────────────────
+   BUILD FACILITY LIST
+────────────────────────────────────────── */
+const list = document.getElementById('facility-list');
+facilities.forEach((f, i) => {
+  const card = document.createElement('div');
+  card.className = 'facility-card';
+  card.innerHTML = `
+    <div class="facility-logo" style="background:${
+      f.company==='Google'?'#1a3d1a':f.company==='Amazon Web Services'?'#3d2a1a':f.company==='Microsoft'?'#1a1a3d':'#2a1a3d'
+    }">${f.emoji}</div>
+    <div class="facility-info">
+      <div class="facility-name">${f.name}</div>
+      <div class="facility-location">${f.location}</div>
+    </div>
+    <div class="risk-badge risk-${f.risk}">${f.riskLabel}</div>
+  `;
+  card.addEventListener('click', () => selectFacility(i));
+  list.appendChild(card);
+});
+
+</script>
+</body>
+</html>
