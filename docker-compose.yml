@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+
+  # ── PostGIS database ────────────────────────────────────────────────────────
+  db:
+    image: postgis/postgis:15-3.4
+    container_name: dclens_db
+    environment:
+      POSTGRES_DB: dclens
+      POSTGRES_USER: dclens
+      POSTGRES_PASSWORD: dclens_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Run initial schema on first start
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dclens -d dclens"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── FastAPI backend ─────────────────────────────────────────────────────────
+  backend:
+    build: ./backend
+    container_name: dclens_backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://dclens:dclens_dev@db:5432/dclens
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    volumes:
+      # Hot reload: code changes reflect immediately without rebuilding
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── Static frontend ─────────────────────────────────────────────────────────
+  frontend:
+    image: nginx:alpine
+    container_name: dclens_frontend
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
