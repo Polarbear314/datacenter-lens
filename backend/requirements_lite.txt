@@ -1,0 +1,10 @@
+# Minimal requirements — no PostGIS, no Docker needed
+# Install with: pip3 install -r requirements_lite.txt
+
+fastapi==0.111.0
+uvicorn[standard]==0.30.0
+sqlalchemy==2.0.30
+pydantic==2.7.1
+python-dotenv==1.0.1
+httpx==0.27.0
+shapely==2.0.4
