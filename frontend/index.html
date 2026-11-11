@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DataCenter Lens</title>
+
+  <!-- Leaflet CSS + JS (loaded from CDN — no build step required) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Leaflet.draw — lets users draw polygons on the map for annotation -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117;
+      color: #e8eaf0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    header {
+      background: #1a1e2e;
+      border-bottom: 1px solid #2e3550;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 18px; font-weight: 700; color: #7eb8f7; }
+    header p  { font-size: 13px; color: #8892a4; }
+
+    /* ── Main layout: map + side panel ──────────────────────────────────── */
+    .layout {
+      display: flex;
+      flex: 1;
+      min-height: 0;   /* Critical: lets flex children shrink below content height */
+      overflow: hidden;
+    }
+
+    #map {
+      flex: 1;
+      min-width: 0;    /* Prevents flex overflow */
+      height: 100%;    /* Explicit height so Leaflet calculates tiles correctly */
+    }
+
+    /* ── Side panel ─────────────────────────────────────────────────────── */
+    #panel {
+      width: 360px;
+      background: #1a1e2e;
+      border-left: 1px solid #2e3550;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    #panel-header {
+      padding: 16px;
+      border-bottom: 1px solid #2e3550;
+      background: #14172a;
+    }
+    #panel-header h2 { font-size: 15px; font-weight: 600; color: #c5d0e6; margin-bottom: 4px; }
+    #panel-header p  { font-size: 12px; color: #6b7a99; }
+
+    #panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    /* ── Site list items ─────────────────────────────────────────────────── */
+    .site-item {
+      background: #20253a;
+      border: 1px solid #2e3550;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .site-item:hover  { border-color: #4a7fc1; background: #252b42; }
+    .site-item.active { border-color: #7eb8f7; background: #1e2d4a; }
+
+    .site-item h3    { font-size: 13px; font-weight: 600; color: #c5d0e6; margin-bottom: 3px; }
+    .site-item .addr { font-size: 11px; color: #6b7a99; margin-bottom: 6px; }
+
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.operating         { background: #1a3a2a; color: #4caf80; border: 1px solid #2d6b4a; }
+    .badge.under_construction { background: #3a2a1a; color: #f0a040; border: 1px solid #6b4a2d; }
+    .badge.proposed          { background: #2a1a3a; color: #a060f0; border: 1px solid #4a2d6b; }
+    .badge.unknown           { background: #2a2e3a; color: #8892a4; border: 1px solid #3a4050; }
+
+    /* ── Site detail view ────────────────────────────────────────────────── */
+    #detail-view { display: none; }
+
+    .detail-label { font-size: 11px; color: #6b7a99; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 3px; }
+    .detail-value { font-size: 13px; color: #c5d0e6; }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 9px;
+      border-radius: 6px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 10px;
+      text-align: center;
+      transition: opacity 0.15s;
+    }
+    .btn:hover   { opacity: 0.85; }
+    .btn-primary { background: #2d5fa8; color: #fff; }
+    .btn-outline { background: transparent; color: #7eb8f7; border: 1px solid #2e3550; }
+
+    /* ── Estimate cards ──────────────────────────────────────────────────── */
+    .est-card {
+      background: #141c2e;
+      border: 1px solid #1e2a42;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .est-card-title {
+      font-size: 11px;
+      color: #6b7a99;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .est-card-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #c5d0e6;
+    }
+    .est-card-range {
+      font-size: 11px;
+      color: #4a5568;
+      margin-top: 2px;
+    }
+    .est-card-meta {
+      font-size: 11px;
+      color: #4a5568;
+      margin-top: 6px;
+      border-top: 1px solid #1e2a42;
+      padding-top: 6px;
+    }
+    .conf-bar-wrap {
+      background: #1e2a42;
+      border-radius: 3px;
+      height: 4px;
+      margin-top: 6px;
+    }
+    .conf-bar {
+      height: 4px;
+      border-radius: 3px;
+      background: #2d5fa8;
+    }
+    .status-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .status-estimated { background: #1a3a5c; color: #7eb8f7; }
+    .status-inferred  { background: #2a2a10; color: #d4a012; }
+    .status-unknown   { background: #2a1a1a; color: #e05656; }
+
+    .back-btn {
+      background: none;
+      border: none;
+      color: #7eb8f7;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 0 0 12px 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ── Annotation panel ────────────────────────────────────────────────── */
+    #annotate-panel {
+      background: #14172a;
+      border-top: 1px solid #2e3550;
+      padding: 12px 16px;
+      flex-shrink: 0;
+      display: none;
+    }
+    #annotate-panel h4 { font-size: 12px; color: #8892a4; margin-bottom: 8px; }
+
+    select, input[type="range"] {
+      width: 100%;
+      background: #20253a;
+      border: 1px solid #2e3550;
+      color: #c5d0e6;
+      padding: 6px 8px;
+      border-radius: 5px;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    /* ── Document list ────────────────────────────────────────────────────── */
+    .doc-item {
+      padding: 8px 0;
+      border-bottom: 1px solid #1e2438;
+    }
+    .doc-item:last-child { border-bottom: none; }
+    .doc-item a { font-size: 12px; color: #7eb8f7; text-decoration: none; }
+    .doc-item a:hover { text-decoration: underline; }
+    .doc-item .doc-meta { font-size: 11px; color: #6b7a99; margin-top: 2px; }
+
+    /* ── Loading/empty states ────────────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #6b7a99;
+      font-size: 13px;
+    }
+    .loading { color: #6b7a99; font-size: 12px; padding: 12px 0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>DataCenter Lens</h1>
+    <p>Estimate and explain local data center impacts</p>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- Map fills left side -->
+  <div id="map"></div>
+
+  <!-- Side panel -->
+  <div id="panel">
+    <div id="panel-header">
+      <h2 id="panel-title">Sites</h2>
+      <p id="panel-subtitle">Loudoun County, Virginia — MVP</p>
+    </div>
+
+    <div id="panel-body">
+      <!-- Site list (shown by default) -->
+      <div id="list-view">
+        <div class="loading">Loading sites…</div>
+      </div>
+
+      <!-- Site detail (shown when a site is selected) -->
+      <div id="detail-view">
+        <button class="back-btn" onclick="showList()">← All sites</button>
+
+        <div class="detail-label">Operator</div>
+        <div class="detail-value" id="d-operator">—</div>
+
+        <div class="detail-label">Status</div>
+        <div id="d-status-badge"></div>
+
+        <div class="detail-label">Address</div>
+        <div class="detail-value" id="d-address">—</div>
+
+        <div class="detail-label">Parcel ID</div>
+        <div class="detail-value" id="d-parcel">—</div>
+
+        <div class="detail-label">Notes</div>
+        <div class="detail-value" id="d-notes" style="font-size:12px; color:#8892a4; line-height:1.5;">—</div>
+
+        <hr style="border-color:#2e3550; margin: 14px 0;" />
+
+        <div class="detail-label">Public Documents (<span id="d-doc-count">0</span>)</div>
+        <div id="d-docs"></div>
+
+        <hr style="border-color:#2e3550; margin: 14px 0;" />
+
+        <div class="detail-label">Detected Infrastructure (<span id="d-infra-count">0</span> polygons)</div>
+        <div id="d-infra-summary" style="font-size:12px; color:#8892a4; padding: 6px 0;"></div>
+
+        <button class="btn btn-outline" onclick="startRelocate()" id="relocate-btn" style="margin-top: 8px; border-color: #f59e0b; color: #f59e0b;">
+          📍 Fix pin location
+        </button>
+        <button class="btn btn-outline" onclick="startAnnotation()" id="annotate-btn" style="margin-top: 6px;">
+          ✏️ Draw a polygon
+        </button>
+        <button class="btn btn-outline" onclick="importLoudounPolygons()" id="import-btn"
+          style="margin-top: 6px; border-color: #6366f1; color: #6366f1;">
+          🗺️ Import Official Outlines (LoudounGIS)
+        </button>
+
+        <button class="btn btn-primary" id="estimate-btn" onclick="runEstimates()" style="margin-top: 6px; background:#1a6b4a;">
+          ⚡ Run Resource Estimates
+        </button>
+
+        <button class="btn btn-primary" onclick="viewReport()" style="margin-top: 6px;">
+          📄 View Full Report
+        </button>
+
+        <!-- Estimates section -->
+        <div class="detail-label" style="margin-top:16px;">Resource Estimates</div>
+        <div id="d-estimates">
+          <div style="font-size:12px;color:#4a5568;padding:6px 0;">
+            No estimates yet — click "Run Resource Estimates" to generate them.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Annotation controls — shown when drawing mode is active -->
+    <div id="annotate-panel">
+      <h4>Annotate selected polygon</h4>
+      <select id="class-select">
+        <option value="campus">Whole Campus / Site Boundary</option>
+        <option value="main_building">Main Building / Server Hall</option>
+        <option value="substation">Electrical Substation</option>
+        <option value="cooling_equipment">Cooling Equipment</option>
+        <option value="generators">Backup Generators</option>
+        <option value="water_storage">Water Storage / Pond</option>
+        <option value="utility_corridor">Utility Corridor</option>
+        <option value="construction_staging">Construction Staging</option>
+        <option value="parking">Parking / Roads</option>
+        <option value="solar">Solar / Battery Storage</option>
+        <option value="other">Other</option>
+      </select>
+      <label style="font-size:11px; color:#6b7a99;">
+        Confidence: <span id="conf-display">100%</span>
+      </label>
+      <input type="range" id="conf-slider" min="10" max="100" value="100"
+             oninput="document.getElementById('conf-display').textContent = this.value + '%'" />
+      <button class="btn btn-primary" onclick="savePolygon()" id="save-btn" disabled>
+        Save Polygon
+      </button>
+      <button class="btn btn-outline" onclick="cancelAnnotation()">Cancel</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Configuration ─────────────────────────────────────────────────────────────
+// Works whether opened as a file:// URL or served from localhost
+const API = 'http://localhost:8000';
+
+// Infrastructure class colors for map display
+const CLASS_COLORS = {
+  campus:              '#ffffff',   // white — whole-site boundary
+  main_building:       '#f97316',   // orange
+  substation:          '#ef4444',   // red
+  cooling_equipment:   '#14b8a6',   // teal
+  generators:          '#eab308',   // yellow
+  water_storage:       '#3b82f6',   // blue
+  utility_corridor:    '#a855f7',   // purple
+  construction_staging:'#f59e0b',   // amber
+  parking:             '#6b7280',   // gray
+  solar:               '#84cc16',   // lime
+  other:               '#64748b',   // slate
+  unknown:             '#374151',   // dark gray
+};
+
+// ── Map setup ─────────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [39.0454, -77.4819],   // Equinix DC1 campus, Ashburn VA
+  zoom: 15,
+  zoomControl: true,
+});
+
+// ESRI World Imagery — free satellite tiles, no API key needed
+const satellite = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 20, attribution: 'Tiles © Esri — Esri, USDA, USGS, AEX, GeoEye, Getmapping, IGN' }
+).addTo(map);
+
+// ESRI label overlay — road and building names on top of satellite
+const labels = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 20, opacity: 0.8 }
+).addTo(map);
+
+// Layer toggle (top-right corner)
+L.control.layers(
+  { 'Satellite': satellite,
+    'Street map': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, attribution: '© OpenStreetMap' }) },
+  { 'Labels': labels },
+  { position: 'topright', collapsed: false }
+).addTo(map);
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let allSites      = [];
+let activeSite    = null;
+let siteMarkers   = {};
+let infraLayers   = [];
+let drawnItems    = new L.FeatureGroup().addTo(map);
+let pendingPolygon = null;
+let drawControl   = null;
+
+// ── Fetch and render site list ─────────────────────────────────────────────────
+async function loadSites() {
+  try {
+    const res = await fetch(`${API}/sites/`);
+    allSites = await res.json();
+    renderSiteList(allSites);
+    renderMapMarkers(allSites);
+  } catch (err) {
+    document.getElementById('list-view').innerHTML =
+      `<div class="empty-state">Cannot reach API at ${API}.<br>Make sure <code>docker compose up</code> is running.</div>`;
+  }
+}
+
+function renderSiteList(sites) {
+  const el = document.getElementById('list-view');
+  if (sites.length === 0) {
+    el.innerHTML = '<div class="empty-state">No sites yet.<br>Run <code>python scripts/seed_test_sites.py</code></div>';
+    return;
+  }
+  el.innerHTML = sites.map(s => `
+    <div class="site-item" id="list-item-${s.id}" onclick="selectSite('${s.id}')">
+      <h3>${s.name}</h3>
+      <div class="addr">${s.address || 'Address unknown'}</div>
+      <span class="badge ${s.status || 'unknown'}">${(s.status || 'unknown').replace(/_/g,' ')}</span>
+    </div>
+  `).join('');
+}
+
+function renderMapMarkers(sites) {
+  sites.forEach(s => {
+    if (!s.location) return;
+    const [lng, lat] = s.location.coordinates;
+    const marker = L.circleMarker([lat, lng], {
+      radius: 10,
+      fillColor: '#7eb8f7',
+      color: '#fff',
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.85,
+    }).addTo(map);
+
+    marker.bindTooltip(s.name, { permanent: false, direction: 'top' });
+    marker.on('click', () => selectSite(s.id));
+    siteMarkers[s.id] = marker;
+  });
+}
+
+// ── Select a site ──────────────────────────────────────────────────────────────
+async function selectSite(siteId) {
+  // Highlight list item
+  document.querySelectorAll('.site-item').forEach(el => el.classList.remove('active'));
+  const listEl = document.getElementById(`list-item-${siteId}`);
+  if (listEl) listEl.classList.add('active');
+
+  // Fetch full site detail
+  const res  = await fetch(`${API}/sites/${siteId}`);
+  activeSite = await res.json();
+
+  // Show detail panel
+  showDetail(activeSite);
+
+  // Fly map to site
+  if (activeSite.location) {
+    const [lng, lat] = activeSite.location.coordinates;
+    map.flyTo([lat, lng], 16, { duration: 1.2 });
+  }
+
+  // Render infrastructure polygons on map
+  renderInfrastructure(activeSite.infrastructure);
+
+  // Load any previously saved estimates
+  loadExistingEstimates(siteId);
+}
+
+function showDetail(site) {
+  document.getElementById('list-view').style.display   = 'none';
+  document.getElementById('detail-view').style.display = 'block';
+  document.getElementById('panel-title').textContent    = site.name;
+  document.getElementById('panel-subtitle').textContent = site.operator || 'Operator unknown';
+
+  // Reset estimates panel while loading
+  document.getElementById('d-estimates').innerHTML =
+    '<div style="font-size:12px;color:#4a5568;padding:6px 0;">Loading…</div>';
+
+  document.getElementById('d-operator').textContent = site.operator || '—';
+  document.getElementById('d-address').textContent  = site.address  || '—';
+  document.getElementById('d-parcel').textContent   = site.parcel_id || 'Not confirmed';
+  document.getElementById('d-notes').textContent    = site.notes    || '—';
+
+  const badge = document.getElementById('d-status-badge');
+  badge.innerHTML = `<span class="badge ${site.status || 'unknown'}">${(site.status||'unknown').replace(/_/g,' ')}</span>`;
+
+  // Documents
+  const docsEl = document.getElementById('d-docs');
+  document.getElementById('d-doc-count').textContent = site.documents.length;
+  if (site.documents.length === 0) {
+    docsEl.innerHTML = '<div style="font-size:12px;color:#4a5568;padding:6px 0;">No documents linked yet</div>';
+  } else {
+    docsEl.innerHTML = site.documents.map(d => `
+      <div class="doc-item">
+        <a href="${d.url || '#'}" target="_blank">${d.title}</a>
+        <div class="doc-meta">${d.document_type || 'document'} · ${d.publication_date || 'date unknown'}</div>
+      </div>
+    `).join('');
+  }
+
+  // Infrastructure summary
+  document.getElementById('d-infra-count').textContent = site.infrastructure.length;
+  if (site.infrastructure.length > 0) {
+    const counts = {};
+    site.infrastructure.forEach(i => { counts[i.class_label] = (counts[i.class_label]||0)+1; });
+    document.getElementById('d-infra-summary').innerHTML =
+      Object.entries(counts).map(([k,v]) =>
+        `<span style="color:${CLASS_COLORS[k]||'#888'}">■</span> ${k.replace(/_/g,' ')}: ${v}`
+      ).join('<br>');
+  } else {
+    document.getElementById('d-infra-summary').textContent = 'No polygons annotated yet — draw one!';
+  }
+}
+
+function showList() {
+  document.getElementById('list-view').style.display   = 'block';
+  document.getElementById('detail-view').style.display = 'none';
+  document.getElementById('panel-title').textContent    = 'Sites';
+  document.getElementById('panel-subtitle').textContent = 'Loudoun County, Virginia — MVP';
+  cancelAnnotation();
+
+  // Clear infrastructure layers
+  infraLayers.forEach(l => map.removeLayer(l));
+  infraLayers = [];
+}
+
+// ── Infrastructure rendering ───────────────────────────────────────────────────
+const CLASS_OPTIONS = [
+  'campus', 'main_building', 'substation', 'cooling_equipment', 'generators',
+  'water_storage', 'utility_corridor', 'construction_staging',
+  'parking', 'solar', 'other',
+];
+
+function renderInfrastructure(items) {
+  infraLayers.forEach(l => map.removeLayer(l));
+  infraLayers = [];
+
+  items.forEach(item => {
+    if (!item.geometry) return;
+    const color = CLASS_COLORS[item.class_label] || '#888';
+    const layer = L.geoJSON(item.geometry, {
+      style: {
+        color,
+        fillColor:   color,
+        fillOpacity: item.human_corrected ? 0.45 : 0.28,
+        weight:      item.human_corrected ? 3 : 2,
+        opacity:     0.95,
+        dashArray:   item.human_corrected ? null : '4 3',
+      }
+    }).addTo(map);
+
+    // Build popup with reclassify + delete controls
+    const selectOptions = CLASS_OPTIONS.map(c =>
+      `<option value="${c}" ${c === item.class_label ? 'selected' : ''}>${c.replace(/_/g,' ')}</option>`
+    ).join('');
+
+    const correctedBadge = item.human_corrected
+      ? `<span style="color:#4caf80;font-size:10px;">✓ human-verified</span><br>`
+      : `<span style="color:#f59e0b;font-size:10px;">⚠ auto-detected — please verify</span><br>`;
+
+    const originalNote = item.original_label
+      ? `<span style="font-size:10px;color:#8892a4;">was: ${item.original_label.replace(/_/g,' ')}</span><br>`
+      : '';
+
+    const CLASS_DISPLAY = {
+      campus:               'Whole Campus / Site Boundary',
+      main_building:        'Main Building / Server Hall',
+      substation:           'Electrical Substation',
+      cooling_equipment:    'Cooling Equipment',
+      generators:           'Backup Generators',
+      water_storage:        'Water Storage / Pond',
+      utility_corridor:     'Utility Corridor',
+      construction_staging: 'Construction Staging',
+      parking:              'Parking / Roads',
+      solar:                'Solar / Battery Storage',
+      other:                'Other',
+    };
+
+    layer.bindPopup(`
+      <div style="min-width:220px;font-family:system-ui,sans-serif;">
+        <div style="margin-bottom:6px;">
+          ${correctedBadge}
+          ${originalNote}
+          <strong style="font-size:13px;">${CLASS_DISPLAY[item.class_label] || item.class_label.replace(/_/g,' ')}</strong><br>
+          <span style="font-size:11px;color:#888;">
+            ${((item.confidence_score||1)*100).toFixed(0)}% confidence ·
+            ${item.detection_method || 'manual'}
+          </span>
+        </div>
+        <hr style="border:none;border-top:1px solid #333;margin:6px 0;">
+        <div style="margin-bottom:6px;">
+          <label style="font-size:11px;color:#aaa;display:block;margin-bottom:3px;">Reclassify as:</label>
+          <select id="reclass-${item.id}" style="width:100%;background:#1a1e2e;color:#e8eaf0;border:1px solid #444;padding:4px;border-radius:4px;font-size:12px;">
+            ${selectOptions}
+          </select>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="reclassifyPolygon('${item.id}')"
+            style="flex:1;background:#2d5fa8;color:#fff;border:none;padding:5px;border-radius:4px;cursor:pointer;font-size:12px;">
+            ✓ Save
+          </button>
+          <button onclick="deletePolygon('${item.id}')"
+            style="flex:1;background:#7f1d1d;color:#fca5a5;border:none;padding:5px;border-radius:4px;cursor:pointer;font-size:12px;">
+            🗑 Delete
+          </button>
+        </div>
+      </div>
+    `, { maxWidth: 260 });
+
+    layer._infraId = item.id;
+    infraLayers.push(layer);
+  });
+}
+
+async function reclassifyPolygon(infraId) {
+  const select = document.getElementById(`reclass-${infraId}`);
+  if (!select || !activeSite) return;
+  const newLabel = select.value;
+
+  const res = await fetch(`${API}/sites/${activeSite.id}/infrastructure/${infraId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ class_label: newLabel, corrected_by: 'user' }),
+  });
+
+  if (res.ok) {
+    map.closePopup();
+    await selectSite(activeSite.id);   // Refresh map + panel
+  } else {
+    alert('Failed to reclassify: ' + await res.text());
+  }
+}
+
+async function deletePolygon(infraId) {
+  if (!activeSite) return;
+  if (!confirm('Delete this polygon? This cannot be undone.')) return;
+
+  const res = await fetch(`${API}/sites/${activeSite.id}/infrastructure/${infraId}`, {
+    method: 'DELETE',
+  });
+
+  if (res.ok || res.status === 204) {
+    map.closePopup();
+    await selectSite(activeSite.id);   // Refresh map + panel
+  } else {
+    alert('Failed to delete: ' + await res.text());
+  }
+}
+
+// ── Annotation (polygon drawing) ───────────────────────────────────────────────
+function startAnnotation() {
+  if (!activeSite) return;
+  document.getElementById('annotate-panel').style.display = 'block';
+  document.getElementById('annotate-btn').textContent = '🔴 Drawing mode active…';
+
+  // Enable Leaflet.draw polygon tool
+  drawControl = new L.Draw.Polygon(map, {
+    shapeOptions: { color: '#7eb8f7', fillOpacity: 0.2 }
+  });
+  drawControl.enable();
+
+  map.on('draw:created', function(e) {
+    drawnItems.addLayer(e.layer);
+    pendingPolygon = e.layer.toGeoJSON().geometry;
+    document.getElementById('save-btn').disabled = false;
+  });
+}
+
+async function savePolygon() {
+  if (!pendingPolygon || !activeSite) return;
+
+  const classLabel     = document.getElementById('class-select').value;
+  const confidenceScore = parseInt(document.getElementById('conf-slider').value) / 100;
+
+  const res = await fetch(`${API}/sites/${activeSite.id}/infrastructure`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      class_label:      classLabel,
+      geometry:         pendingPolygon,
+      confidence_score: confidenceScore,
+      detection_method: 'manual',
+    })
+  });
+
+  if (res.ok) {
+    alert(`✓ Polygon saved as "${classLabel.replace(/_/g,' ')}"`);
+    cancelAnnotation();
+    selectSite(activeSite.id);  // Refresh detail panel
+  } else {
+    alert('Failed to save polygon: ' + (await res.text()));
+  }
+}
+
+function cancelAnnotation() {
+  document.getElementById('annotate-panel').style.display = 'none';
+  document.getElementById('save-btn').disabled = true;
+  if (document.getElementById('annotate-btn')) {
+    document.getElementById('annotate-btn').textContent = '✏️ Draw a polygon';
+  }
+  drawnItems.clearLayers();
+  pendingPolygon = null;
+  if (drawControl) { drawControl.disable(); drawControl = null; }
+  map.off('draw:created');
+}
+
+function viewReport() {
+  if (!activeSite) return;
+  window.open(`${API}/sites/${activeSite.id}/report`, '_blank');
+}
+
+// ── Import LoudounGIS polygons ────────────────────────────────────────────────
+
+async function importLoudounPolygons() {
+  if (!activeSite) return;
+  const btn = document.getElementById('import-btn');
+  btn.textContent = '⏳ Fetching from LoudounGIS…';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/sites/${activeSite.id}/import-loudoun-polygons`, { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      btn.textContent = `✓ ${data.imported} building(s) imported`;
+      btn.style.borderColor = '#4caf80';
+      btn.style.color = '#4caf80';
+      await selectSite(activeSite.id);   // refresh map to show new polygons
+    } else {
+      alert('Import failed: ' + (data.detail || JSON.stringify(data)));
+      btn.textContent = '🗺️ Import Official Outlines (LoudounGIS)';
+      btn.disabled = false;
+    }
+  } catch (e) {
+    alert('Could not reach the server.');
+    btn.textContent = '🗺️ Import Official Outlines (LoudounGIS)';
+    btn.disabled = false;
+  }
+}
+
+// ── Resource estimation ───────────────────────────────────────────────────────
+
+async function runEstimates() {
+  if (!activeSite) return;
+  const btn = document.getElementById('estimate-btn');
+  btn.textContent = '⏳ Running…';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/sites/${activeSite.id}/estimate`, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(`Estimation failed: ${err.detail || res.statusText}`);
+      return;
+    }
+    const data = await res.json();
+    renderEstimates(data.estimates);
+  } catch (e) {
+    alert('Could not reach the server. Make sure uvicorn is running.');
+  } finally {
+    btn.textContent = '⚡ Run Resource Estimates';
+    btn.disabled = false;
+  }
+}
+
+function renderEstimates(estimates) {
+  const el = document.getElementById('d-estimates');
+  if (!estimates || estimates.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:#4a5568;padding:6px 0;">No estimates returned. Draw a main_building polygon first.</div>';
+    return;
+  }
+
+  const LABELS = {
+    electricity_demand_mw: 'Electricity Demand',
+    water_use_gpd:         'Water Use',
+    cooling_method:        'Cooling Method',
+    land_use_sqft:         'Annotated Area',
+  };
+
+  const ICONS = {
+    electricity_demand_mw: '⚡',
+    water_use_gpd:         '💧',
+    cooling_method:        '🌡️',
+    land_use_sqft:         '📐',
+  };
+
+  // Preferred display order
+  const ORDER = ['electricity_demand_mw', 'water_use_gpd', 'cooling_method', 'land_use_sqft'];
+  const sorted = [...estimates].sort((a, b) => {
+    const ai = ORDER.indexOf(a.estimate_type);
+    const bi = ORDER.indexOf(b.estimate_type);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  el.innerHTML = sorted.map(est => {
+    const label  = LABELS[est.estimate_type] || est.estimate_type.replace(/_/g, ' ');
+    const icon   = ICONS[est.estimate_type]  || '📊';
+    const status = est.status || 'unknown';
+    const conf   = Math.round((est.confidence_score || 0) * 100);
+
+    let valueStr = '—';
+    let rangeStr = '';
+    let extraStr = '';
+
+    if (est.estimate_type === 'cooling_method') {
+      // unit field stores the method name
+      valueStr = est.unit ? est.unit.charAt(0).toUpperCase() + est.unit.slice(1) + ' cooling' : '—';
+    } else if (est.value !== null && est.value !== undefined) {
+      if (est.estimate_type === 'electricity_demand_mw') {
+        valueStr = `${est.value.toFixed(1)} MW`;
+        if (est.uncertainty_low !== null)
+          rangeStr = `Range: ${est.uncertainty_low.toFixed(1)}–${est.uncertainty_high.toFixed(1)} MW`;
+      } else if (est.estimate_type === 'water_use_gpd') {
+        valueStr = `${Math.round(est.value).toLocaleString()} gal/day`;
+        if (est.uncertainty_low !== null)
+          rangeStr = `Range: ${Math.round(est.uncertainty_low).toLocaleString()}–${Math.round(est.uncertainty_high).toLocaleString()} gal/day`;
+        // Annualized
+        const acFt = (est.value * 365 / 325851).toFixed(1);
+        extraStr = `≈ ${acFt} acre-feet/year`;
+      } else if (est.estimate_type === 'land_use_sqft') {
+        valueStr = `${Math.round(est.value).toLocaleString()} sq ft`;
+        const acres = (est.value / 43560).toFixed(1);
+        extraStr = `≈ ${acres} acres`;
+      } else {
+        valueStr = `${est.value.toLocaleString()} ${est.unit || ''}`;
+      }
+    }
+
+    const statusClass = `status-${status}`;
+
+    return `
+      <div class="est-card">
+        <div class="est-card-title">${icon} ${label}</div>
+        <div class="est-card-value">${valueStr}</div>
+        ${rangeStr ? `<div class="est-card-range">${rangeStr}</div>` : ''}
+        ${extraStr ? `<div class="est-card-range">${extraStr}</div>` : ''}
+        <div class="conf-bar-wrap"><div class="conf-bar" style="width:${conf}%"></div></div>
+        <div class="est-card-meta">
+          <span class="status-badge ${statusClass}">${status}</span>
+          &nbsp;${conf}% confidence
+          ${est.assumptions ? `<div style="margin-top:5px;font-size:10px;color:#4a5568;line-height:1.4;">${est.assumptions.slice(0, 160)}${est.assumptions.length > 160 ? '…' : ''}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Load existing estimates when a site is selected
+async function loadExistingEstimates(siteId) {
+  try {
+    const res  = await fetch(`${API}/sites/${siteId}/estimate`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.estimates && data.estimates.length > 0) {
+      renderEstimates(data.estimates);
+    }
+  } catch (_) { /* silent — estimates are optional */ }
+}
+
+// ── Relocate (fix pin position by clicking on the map) ────────────────────────
+let relocating = false;
+
+function startRelocate() {
+  if (!activeSite) return;
+  relocating = true;
+  document.getElementById('relocate-btn').textContent = '🎯 Click the correct spot on the map…';
+  document.getElementById('relocate-btn').style.borderColor = '#ef4444';
+  map.getContainer().style.cursor = 'crosshair';
+
+  map.once('click', async function(e) {
+    const { lat, lng } = e.latlng;
+
+    // Update via the API PATCH endpoint
+    const res = await fetch(`${API}/sites/${activeSite.id}/relocate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ latitude: lat, longitude: lng }),
+    });
+
+    if (res.ok) {
+      // Move the marker
+      if (siteMarkers[activeSite.id]) {
+        siteMarkers[activeSite.id].setLatLng([lat, lng]);
+      }
+      document.getElementById('relocate-btn').textContent = `✓ Saved (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+      document.getElementById('relocate-btn').style.borderColor = '#4caf80';
+      document.getElementById('relocate-btn').style.color = '#4caf80';
+    } else {
+      alert('Failed to save location: ' + await res.text());
+    }
+
+    map.getContainer().style.cursor = '';
+    relocating = false;
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadSites();
+
+// Force Leaflet to recalculate map dimensions after the browser finishes layout.
+// Without this, the map renders at the wrong size if the container isn't ready yet.
+setTimeout(() => map.invalidateSize(), 100);
+setTimeout(() => map.invalidateSize(), 500);
+window.addEventListener('load', () => map.invalidateSize());
+</script>
+</body>
+</html>
